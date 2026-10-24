@@ -621,7 +621,7 @@
 
         .arena.is-phone .mobile-actions {
             display: grid;
-            grid-template-columns: 58px 74px;
+            grid-template-columns: 52px 52px 74px;
             grid-template-rows: repeat(2, 54px);
             align-items: end;
             gap: 6px;
@@ -637,9 +637,29 @@
         }
 
         .arena.is-phone .mobile-actions #fire {
-            grid-column: 2;
+            grid-column: 3;
             grid-row: 1 / span 2;
             align-self: end;
+        }
+
+        .arena.is-phone #utility-button {
+            grid-column: 1;
+            grid-row: 1;
+        }
+
+        .arena.is-phone #melee-button {
+            grid-column: 2;
+            grid-row: 1;
+        }
+
+        .arena.is-phone #weapon-switch {
+            grid-column: 1;
+            grid-row: 2;
+        }
+
+        .arena.is-phone #aim-button {
+            grid-column: 2;
+            grid-row: 2;
         }
 
         .arena:not(.is-phone) .mobile-controls {
@@ -696,21 +716,21 @@
             }
 
             .arena.is-phone .mobile-actions {
-                grid-template-columns: 52px 68px;
-                grid-template-rows: repeat(2, 48px);
+                grid-template-columns: 46px 46px 64px;
+                grid-template-rows: repeat(2, 46px);
                 gap: 5px;
             }
 
             .arena.is-phone .utility-button {
-                width: 52px;
-                min-height: 48px;
+                width: 46px;
+                min-height: 46px;
                 padding: 4px;
-                font-size: 10px;
+                font-size: 9px;
             }
 
             .arena.is-phone .fire-button {
-                width: 68px;
-                height: 68px;
+                width: 64px;
+                height: 64px;
             }
         }
 
@@ -784,6 +804,7 @@
                 <div class="mobile-actions">
                     <button class="utility-button" id="utility-button" type="button">UTILITY</button>
                     <button class="utility-button" id="melee-button" type="button">MELEE</button>
+                    <button class="utility-button" id="weapon-switch" type="button" aria-label="Switch weapon">GUN 2</button>
                     <button class="utility-button" id="aim-button" type="button" aria-pressed="false">AIM</button>
                     <button class="fire-button" id="fire" type="button">FIRE</button>
                 </div>
@@ -840,7 +861,7 @@
             </div>
         </div>
 
-        <p class="instructions">Laptop: W A S D move · Mouse look · Space jump · Left-click fire · Right-click scope · Shift sprint · 1/2 change guns · Q melee · G utility · R reload. Phone: touch pad to move · Drag arena to look · FIRE to shoot · MELEE to use your katana.</p>
+        <p class="instructions">Laptop: W A S D move · Mouse look · Space jump · Left-click fire · Right-click scope · Shift sprint · 1/2 change guns · Q melee · G utility · R reload. Phone: touch pad to move · Drag arena to look · GUN 1/2 switches guns · FIRE to shoot · MELEE to strike.</p>
         <label class="mouse-setting" for="sensitivity">Mouse sensitivity
             <input id="sensitivity" type="range" min="0.5" max="2" step="0.1" value="1">
             <span id="sensitivity-value">1.0×</span>
@@ -869,6 +890,7 @@
         const fireButton = document.querySelector("#fire");
         const damageFeedback = document.querySelector("#damage-feedback");
         const meleeButton = document.querySelector("#melee-button");
+        const weaponSwitchButton = document.querySelector("#weapon-switch");
         const aimButton = document.querySelector("#aim-button");
         const deviceButtons = [...document.querySelectorAll("[data-device]")];
         const deviceChoicePanel = document.querySelector(".device-choice");
@@ -905,6 +927,24 @@
             scythe: { name: "Dash scythe", reach: 3.2, damage: 100, cooldown: 3200 },
             katana: { name: "Katana", reach: 2.45, damage: 100, cooldown: 650 },
             fist: { name: "Fist", reach: 1.65, damage: 55, cooldown: 380 }
+        };
+
+        const weaponSoundProfiles = {
+            sniper: { type: "boom", frequency: 92, endFrequency: 38, duration: 0.24, noise: 0.2 },
+            assault: { type: "crack", frequency: 165, endFrequency: 78, duration: 0.095, noise: 0.11 },
+            pulse: { type: "pulse", frequency: 310, endFrequency: 720, duration: 0.19, noise: 0.025 },
+            burst: { type: "burst", frequency: 210, endFrequency: 105, duration: 0.07, noise: 0.075 },
+            bow: { type: "bow", frequency: 540, endFrequency: 185, duration: 0.2, noise: 0.012 },
+            shotgun: { type: "shotgun", frequency: 74, endFrequency: 32, duration: 0.26, noise: 0.25 },
+            revolver: { type: "revolver", frequency: 138, endFrequency: 68, duration: 0.13, noise: 0.1 },
+            uzi: { type: "uzi", frequency: 235, endFrequency: 112, duration: 0.055, noise: 0.07 },
+            handgun: { type: "handgun", frequency: 290, endFrequency: 125, duration: 0.085, noise: 0.09 },
+            infinitePistols: { type: "dual", frequency: 390, endFrequency: 180, duration: 0.075, noise: 0.065 },
+            scythe: { type: "scythe", frequency: 125, endFrequency: 760, duration: 0.32, noise: 0.018 },
+            katana: { type: "katana", frequency: 680, endFrequency: 230, duration: 0.18, noise: 0.01 },
+            fist: { type: "fist", frequency: 115, endFrequency: 48, duration: 0.12, noise: 0.045 },
+            grenade: { type: "grenade", frequency: 420, endFrequency: 95, duration: 0.42, noise: 0.22 },
+            grenadeExplosion: { type: "grenadeExplosion", frequency: 68, endFrequency: 26, duration: 0.48, noise: 0.3 }
         };
 
         const mapSize = 21;
@@ -1193,6 +1233,146 @@
         let pitchLimit = 0.68;
         let aiming = false;
         let nextPlayerDamageAt = 0;
+        let audioContext = null;
+        let noiseBuffer = null;
+
+        function getAudioContext() {
+            const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextConstructor) return null;
+            if (!audioContext) {
+                audioContext = new AudioContextConstructor();
+                noiseBuffer = audioContext.createBuffer(1, Math.ceil(audioContext.sampleRate * 0.3), audioContext.sampleRate);
+                const noise = noiseBuffer.getChannelData(0);
+                for (let index = 0; index < noise.length; index += 1) {
+                    noise[index] = Math.random() * 2 - 1;
+                }
+            }
+            if (audioContext.state === "suspended") {
+                audioContext.resume().catch((error) => {
+                    console.warn("Weapon audio could not be resumed:", error);
+                });
+            }
+            return audioContext;
+        }
+
+        function playWeaponTone(audio, output, frequency, endFrequency, duration, type, volume, delay = 0) {
+            const startAt = audio.currentTime + delay;
+            const oscillator = audio.createOscillator();
+            const envelope = audio.createGain();
+            oscillator.type = type;
+            oscillator.frequency.setValueAtTime(frequency, startAt);
+            oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, endFrequency), startAt + duration);
+            envelope.gain.setValueAtTime(0.0001, startAt);
+            envelope.gain.exponentialRampToValueAtTime(volume, startAt + 0.006);
+            envelope.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+            oscillator.connect(envelope);
+            envelope.connect(output);
+            oscillator.start(startAt);
+            oscillator.stop(startAt + duration + 0.01);
+        }
+
+        function playWeaponNoise(audio, output, duration, volume, filterFrequency, delay = 0) {
+            const startAt = audio.currentTime + delay;
+            const source = audio.createBufferSource();
+            const filter = audio.createBiquadFilter();
+            const envelope = audio.createGain();
+            source.buffer = noiseBuffer;
+            filter.type = "lowpass";
+            filter.frequency.setValueAtTime(filterFrequency, startAt);
+            envelope.gain.setValueAtTime(volume, startAt);
+            envelope.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+            source.connect(filter);
+            filter.connect(envelope);
+            envelope.connect(output);
+            source.start(startAt, Math.random() * 0.12, duration);
+            source.stop(startAt + duration);
+        }
+
+        function playWeaponSound(weaponId) {
+            const profile = weaponSoundProfiles[weaponId];
+            const audio = getAudioContext();
+            if (!profile || !audio) return;
+            const output = audio.createGain();
+            output.gain.setValueAtTime(0.32, audio.currentTime);
+            output.connect(audio.destination);
+            const tone = (frequency, endFrequency, duration, type, volume, delay = 0) =>
+                playWeaponTone(audio, output, frequency, endFrequency, duration, type, volume, delay);
+            const noise = (duration, volume, filterFrequency, delay = 0) =>
+                playWeaponNoise(audio, output, duration, volume, filterFrequency, delay);
+
+            switch (profile.type) {
+                case "boom":
+                    noise(profile.duration, profile.noise, 650);
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "sine", 0.65);
+                    break;
+                case "crack":
+                    noise(profile.duration, profile.noise, 2600);
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "square", 0.18);
+                    break;
+                case "pulse":
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "sawtooth", 0.18);
+                    tone(105, 230, profile.duration * 0.8, "sine", 0.42, 0.015);
+                    noise(profile.duration * 0.55, profile.noise, 1400);
+                    break;
+                case "burst":
+                    for (let shot = 0; shot < 3; shot += 1) {
+                        noise(profile.duration, profile.noise, 2400, shot * 0.075);
+                        tone(profile.frequency, profile.endFrequency, profile.duration, "square", 0.13, shot * 0.075);
+                    }
+                    break;
+                case "bow":
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "triangle", 0.32);
+                    tone(980, 260, profile.duration * 0.7, "sine", 0.12, 0.012);
+                    break;
+                case "shotgun":
+                    noise(profile.duration, profile.noise, 900);
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "sawtooth", 0.42);
+                    break;
+                case "revolver":
+                    noise(profile.duration, profile.noise, 1900);
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "square", 0.25);
+                    tone(72, 42, profile.duration * 0.9, "sine", 0.38);
+                    break;
+                case "uzi":
+                    noise(profile.duration, profile.noise, 3200);
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "square", 0.12);
+                    break;
+                case "handgun":
+                    noise(profile.duration, profile.noise, 3600);
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "triangle", 0.23);
+                    break;
+                case "dual":
+                    noise(profile.duration, profile.noise, 3000);
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "square", 0.15);
+                    tone(profile.frequency * 1.24, profile.endFrequency * 1.2, profile.duration * 0.82, "triangle", 0.13, 0.035);
+                    break;
+                case "scythe":
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "sawtooth", 0.17);
+                    tone(920, 300, profile.duration * 0.75, "triangle", 0.12, 0.03);
+                    noise(profile.duration * 0.65, profile.noise, 2100, 0.015);
+                    break;
+                case "katana":
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "sine", 0.24);
+                    tone(1180, 540, profile.duration * 0.6, "triangle", 0.12);
+                    break;
+                case "fist":
+                    noise(profile.duration, profile.noise, 750);
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "sine", 0.42);
+                    break;
+                case "grenade":
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "triangle", 0.2);
+                    tone(120, 65, profile.duration * 0.8, "sine", 0.18);
+                    noise(profile.duration * 0.4, profile.noise * 0.4, 900);
+                    break;
+                case "grenadeExplosion":
+                    noise(profile.duration, profile.noise, 480);
+                    tone(profile.frequency, profile.endFrequency, profile.duration, "sine", 0.7);
+                    tone(48, 24, profile.duration * 0.9, "triangle", 0.3);
+                    break;
+                default:
+                    break;
+            }
+        }
 
         function createArenaMap() {
             const cells = Array.from({ length: mapSize }, (_, y) =>
@@ -2422,6 +2602,13 @@
                     ? meleeWeapons[loadoutSelection.melee].name.toUpperCase()
                     : "MELEE";
             }
+            if (weaponSwitchButton) {
+                const nextWeapon = selectedWeapon === loadoutSelection.secondary
+                    ? loadoutSelection.primary
+                    : loadoutSelection.secondary;
+                weaponSwitchButton.textContent = selectedWeapon === loadoutSelection.secondary ? "GUN 1" : "GUN 2";
+                weaponSwitchButton.setAttribute("aria-label", `Switch to ${weapons[nextWeapon]?.name ?? "other gun"}`);
+            }
             if (utilityButton) {
                 utilityButton.textContent = selectedUtility === "grenade" ? `GRENADE ${grenades}` :
                     selectedUtility === "medkit" ? `MEDKIT ${medkits}` : "UTILITY";
@@ -2478,6 +2665,21 @@
             reloadUntil = performance.now() + weapons[selectedWeapon].reload;
         }
 
+        function switchWeapon(slot) {
+            if (!running) return;
+            const weapon = loadoutSelection[slot];
+            if (!weapon || !weapons[weapon]) return;
+            selectedWeapon = weapon;
+            reloadUntil = 0;
+            updateLoadout();
+            render();
+        }
+
+        function switchToOtherGun() {
+            if (!running) return;
+            switchWeapon(selectedWeapon === loadoutSelection.secondary ? "primary" : "secondary");
+        }
+
         function eliminateBot(index) {
             bots.splice(index, 1);
             score += 100;
@@ -2506,6 +2708,7 @@
             flashUntil = now + 110;
             const roundsUsed = Math.min(ammo[selectedWeapon], weapon.burst ?? 1);
             ammo[selectedWeapon] -= roundsUsed;
+            playWeaponSound(selectedWeapon);
             const wallDistance = castRay(player.angle).distance;
             const hit = bots
                 .map((bot, index) => {
@@ -2559,6 +2762,7 @@
             const melee = meleeWeapons[selectedWeapon];
             if (performance.now() < nextScytheAt) return;
             nextScytheAt = performance.now() + melee.cooldown;
+            playWeaponSound(selectedWeapon);
             const startX = player.x;
             const startY = player.y;
             if (selectedWeapon === "scythe") {
@@ -2602,6 +2806,7 @@
             if (!running || selectedUtility !== "grenade" || grenades <= 0 || performance.now() < nextGrenadeAt) return;
             grenades -= 1;
             nextGrenadeAt = performance.now() + 700;
+            playWeaponSound("grenade");
             const range = Math.min(5.2, castRay(player.angle).distance - 0.35);
             const x = player.x + Math.cos(player.angle) * Math.max(0.5, range);
             const y = player.y + Math.sin(player.angle) * Math.max(0.5, range);
@@ -2645,6 +2850,7 @@
                         eliminateBot(index);
                     }
                 }
+                playWeaponSound("grenadeExplosion");
                 explosions.push({ expires: now + 500, x: effect.x, y: effect.y });
                 return false;
             });
@@ -2654,7 +2860,7 @@
                 if (weapons[selectedWeapon]) ammo[selectedWeapon] = weapons[selectedWeapon].capacity;
                 reloadUntil = 0;
             }
-            if (spawnTimer > 9 && bots.length < 7) {
+            if (spawnTimer > 9 && bots.length < 7) {71241276
                 addBot();
                 spawnTimer = 0;
             }
@@ -2675,16 +2881,11 @@
             pressed.add(event.code);
             if (event.repeat) return;
             if (event.code === "Space") jumpPlayer();
-            if (event.code === "Digit1") selectedWeapon = loadoutSelection.primary;
-            if (event.code === "Digit2") selectedWeapon = loadoutSelection.secondary;
+            if (event.code === "Digit1") switchWeapon("primary");
+            if (event.code === "Digit2") switchWeapon("secondary");
             if (event.code === "KeyQ") dashScythe();
             if (event.code === "KeyG" || event.code === "KeyH") useUtility();
             if (event.code === "KeyR") reload();
-            if (event.code === "Digit1" || event.code === "Digit2") {
-                reloadUntil = 0;
-                updateLoadout();
-                render();
-            }
         });
 
         document.addEventListener("keyup", (event) => pressed.delete(event.code));
@@ -2793,6 +2994,7 @@
         });
         utilityButton.addEventListener("click", useUtility);
         meleeButton.addEventListener("click", dashScythe);
+        weaponSwitchButton.addEventListener("click", switchToOtherGun);
         sensitivityInput.addEventListener("input", () => {
             mouseSensitivity = Number(sensitivityInput.value);
             sensitivityValue.textContent = `${mouseSensitivity.toFixed(1)}×`;
